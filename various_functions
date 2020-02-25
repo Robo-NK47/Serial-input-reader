@@ -57,12 +57,16 @@ def clean_data(rawData, datadic):
     for i in range(0, len(datadic)):
         temp.append([])
     # This loop takes us to the first header cell
+    k = 0
     con = False
     while not con:
         if to_clean[0][1] != 'aaaa':
             to_clean.pop(0)
         if to_clean[0][1] == 'aaaa':
             con = True
+        k = k+1
+    print(str(k), "packet(s) of data were lost due to adjustments issues")
+    print(" ")
     # This loop chops the cleaned data into the cells of
     # the temporary nested list.
     while len(to_clean)>0:
@@ -214,7 +218,7 @@ def graph_chooser(data):
         con = False
         while not con:
             try:
-                what_to_do = str(input("Enter 'xy' to create X-Y Graphs, 'h' to create histograms or 'x' to exit: "))
+                what_to_do = str(input("Enter 'xy' to create X-Y Graphs, 'h' to create histograms or 'x' to proceed: "))
                 print("")
                 con = True
             except:
