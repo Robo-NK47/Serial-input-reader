@@ -1,0 +1,225 @@
+import serial as ser
+import re, time, pickle
+import matplotlib.pyplot as plt
+
+def recording_dictionary_maker(sensonrnum):
+    # Acquire the number of sensors and sets a dictionary, each key is a sensor.
+    # The data is a nested list [(t1:v1),(t2:v2),...]
+    keys = []
+    for i in range(0,sensonrnum):
+        name = 'Sensor' + str(i+1)
+        keys.append(name)
+    measdict = dict.fromkeys(keys, [])
+    return(measdict)
+
+def data_aq(ard1, userpref, start, datadic):
+    # Reads the raw data from a serial port and inserts it
+    # to a nested list
+    recordedData = []
+    while (time.time() - start <= userpref[0]):
+        if (ard1.inWaiting() > 0):
+            currentsample = []
+            now = time.asctime()
+            currentsample.append(now[11:19])
+            currentsample.append(ard1.readline())
+            recordedData.append(currentsample)
+            # time.sleep(userpref[0]) - This line was meant to handle the sampling rate issue
+            # Not working properly
+    print("The recording operation took", int(time.time() - start), "second(s)")
+    print(" ")
+
+    return recordedData
+
+def clean_data(rawData, datadic):
+    # Takes the raw data and organises it into a
+    # pre-made dictionary
+    to_clean=[]
+    # This loop takes the raw data from the user and turns
+    # it from 'byte' type into string ot int.
+    # After, it will insert a tuple which contains the
+    # time which the sample was taken in, the measured data
+    # and a sample number.
+    for i in range(0,len(rawData)):
+        current_time = rawData[i][0]
+        current_data = str(rawData[i][1])
+        if current_data.find('aaaa') != (-1):
+            current_data = 'aaaa'
+        else:
+            try:
+                current_data = int(re.search(r'\d+', current_data).group())
+            except:
+                current_data = current_data
+        data_cell = (current_time,current_data,i)
+        to_clean.append(data_cell)
+    # This loop constructs a temporary nested list.
+    # The cleaned data will be chopped into it.
+    temp = []
+    for i in range(0, len(datadic)):
+        temp.append([])
+    # This loop takes us to the first header cell
+    con = False
+    while not con:
+        if to_clean[0][1] != 'aaaa':
+            to_clean.pop(0)
+        if to_clean[0][1] == 'aaaa':
+            con = True
+    # This loop chops the cleaned data into the cells of
+    # the temporary nested list.
+    while len(to_clean)>0:
+        if to_clean[0][1] == 'aaaa':
+            to_clean.pop(0)
+        for i in range(0,len(datadic)):
+            if len(to_clean) > 0:
+                temp[i].append(to_clean.pop(0))
+    # This loop inserts the cleaned data sets into a pre-made
+    # dictionary.
+    for i in range(0, len(datadic)):
+        current_sensor = 'Sensor' + str(i + 1)
+        datadic[current_sensor] = temp[i]
+
+
+    return datadic
+
+def countdown():
+    # Gives the user a few seconds to prepare for a
+    # data recording session
+    print(" ")
+    time.sleep(2)
+    print("The recording will begin in:")
+    for i in range(0, 3):
+        print(3 - i, "seconds")
+        time.sleep(1)
+
+def user_pref_input():
+    # Makes a list containing the users preferences
+    con = False
+    while not con:
+        userpref = []
+        try:
+            userpref.append(float(input("Please enter the overall time of sample recording: ")))
+            userpref.append(int(input('What is the number of sensors? ')))
+            #userpref.append(float(input("Please enter the time between sample recording: ")))
+            con = True
+        except:
+            print("Invalid input")
+    return userpref
+
+def simple_graph_maker(data,current_sensor):
+    # Makes a simple X-Y graph for a given data set
+    sample = []
+    voltage = []
+    for j in range(0,len(data)):
+        if type(data[j][1])==int and 0<=data[j][1]<=1023:
+            sample.append(j)
+            voltage.append(data[j][1]*5/1023)
+    print(len(data) - len(voltage), "Data packets were lost from " + current_sensor)
+    print(" ")
+    plt.plot(sample, voltage)
+    plt.xlabel("Sample [#]")
+    plt.ylabel("Voltage [V]")
+    plt.title(current_sensor +" - Voltage as a function of Time")
+    plt.show()
+
+def histogram_maker(data, current_sensor, resolution):
+    # Makes a histogram graph for a given data set
+    voltage = []
+    for i in range(0,len(data)):
+        if type(data[i][1])==int and 0<=data[i][1]<=1023:
+            voltage.append(data[i][1]*5/1023)
+    bins = []
+    i=0
+    for i in range(1,resolution+1):
+       bins.append(i)
+    bin_header = []
+    add = (5/resolution)
+    adder = float(add)
+    for i in range(0,resolution):
+        first = str(i*adder)
+        to_first = first[0:3]
+        second = str((i+1)*adder)
+        to_second = second[0:3]
+        current_bin = str(i+1) + " - " + to_first + '-' + to_second
+        bin_header.append(current_bin)
+    plt.hist(voltage, bins, histtype='bar', rwidth=0.8)
+    plt.title(current_sensor + " - Voltage histogram")
+    plt.xlabel(bin_header)
+    plt.show()
+
+def save_file(data):
+    # Saves a file for given data
+    t = str(time.asctime())
+    file_name = str(re.sub('[:!@#$]', '_', t))+'.pkl'
+    print("The file name is: "+file_name)
+    print(" ")
+    with open(file_name, "wb") as f:
+        pickle.dump(data, f)
+        del data
+
+def open_file():
+    # Open saved files
+    con = False
+    while not con:
+        try:
+            file_name = str(input("Please enter the data file name: "))
+            con = True
+        except:
+            print("Invalid input")
+    file_name = file_name
+    my_file = pickle.load(file=open(file_name, "rb"))
+    return my_file
+
+def user_options(datadict):
+    # Asks the user what would he like to do
+    con = False
+    while not con:
+        try:
+            what_to_do = str(input("Would you like to do? Enter 's' to save a file, 'o' to open a saved file or 'x' to exit: "))
+            print("")
+            con = True
+        except:
+            print("Invalid input")
+    if what_to_do=='s':
+        return (save_file(datadict))
+    if what_to_do == 'o':
+        print(open_file())
+    if what_to_do == 'x':
+        return 0
+
+def simple_graph_maker_dict(datadict):
+    # Makes a simple X-Y graph for each data set in a dictionary
+    for i in range(0, len(datadict)):
+        current_sensor = 'Sensor' + str(i + 1)
+        data = datadict[current_sensor]
+        simple_graph_maker(data, current_sensor)
+
+def histogram_maker_dict(datadict):
+    # Makes a histogram graph for each data set in a dictionary
+    con = False
+    while not con:
+        try:
+            resolution = int(input("To how many bins would you like your histogram to be divided to? "))
+            print(" ")
+            if resolution!= 0:
+                con = True
+        except:
+            print("Invalid input, please insert a natural number larger than 0")
+    for i in range(0, len(datadict)):
+        current_sensor = 'Sensor' + str(i + 1)
+        data = datadict[current_sensor]
+        histogram_maker(data, current_sensor, resolution)
+
+def graph_chooser(data):
+    what_to_do = 'o'
+    while what_to_do != 'x':
+        con = False
+        while not con:
+            try:
+                what_to_do = str(input("Enter 'xy' to create X-Y Graphs, 'h' to create histograms or 'x' to exit: "))
+                print("")
+                con = True
+            except:
+                print("Invalid input")
+        if what_to_do == 'xy':
+            simple_graph_maker_dict(data)
+        if what_to_do == 'h':
+            histogram_maker_dict(data)
