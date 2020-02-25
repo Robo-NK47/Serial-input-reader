@@ -1,0 +1,17 @@
+int sensor1=0;
+int sensor2=1;
+int sensor3=2;
+
+void setup() 
+{
+  analogReference(DEFAULT);
+  Serial.begin(9600);
+}
+
+void loop() 
+{
+  Serial.println("aaaa");
+  Serial.println(analogRead(sensor1));
+  Serial.println(analogRead(sensor2));
+  Serial.println(analogRead(sensor3));
+}
