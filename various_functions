@@ -25,12 +25,10 @@ def data_aq(ard1, userpref, start, datadic):
             recordedData.append(currentsample)
             # time.sleep(userpref[0]) - This line was meant to handle the sampling rate issue
             # Not working properly
-    print("The recording operation took", int(time.time() - start), "second(s)")
-    print(" ")
-
+    print("The recording operation took", int(time.time() - start), "second(s)\n")
     return recordedData
 
-def clean_data(rawData, datadic):
+def clean_data(rawData, datadic, voltage):
     # Takes the raw data and organises it into a
     # pre-made dictionary
     to_clean=[]
@@ -46,10 +44,10 @@ def clean_data(rawData, datadic):
             current_data = 'aaaa'
         else:
             try:
-                current_data = int(re.search(r'\d+', current_data).group())
+                current_data = float(re.search(r'\d+', current_data).group())
             except:
                 current_data = current_data
-        data_cell = (current_time,current_data,i)
+        data_cell = [current_time,current_data,i]
         to_clean.append(data_cell)
     # This loop constructs a temporary nested list.
     # The cleaned data will be chopped into it.
@@ -65,8 +63,7 @@ def clean_data(rawData, datadic):
         if to_clean[0][1] == 'aaaa':
             con = True
         k = k+1
-    print(str(k), "packet(s) of data were lost due to adjustments issues")
-    print(" ")
+    print(str(k), "Data packet(s) were lost due to data alignment issues\n")
     # This loop chops the cleaned data into the cells of
     # the temporary nested list.
     while len(to_clean)>0:
@@ -77,22 +74,27 @@ def clean_data(rawData, datadic):
                 temp[i].append(to_clean.pop(0))
     # This loop inserts the cleaned data sets into a pre-made
     # dictionary.
+    for i in range(0,len(temp)):
+        for j in range(0,len(temp[i])):
+            try:
+                temp[i][j][1] = temp[i][j][1]*voltage/1023
+            except:
+                temp[i][j][1] = temp[i][j][1]
     for i in range(0, len(datadic)):
         current_sensor = 'Sensor' + str(i + 1)
         datadic[current_sensor] = temp[i]
-
-
     return datadic
 
 def countdown():
     # Gives the user a few seconds to prepare for a
     # data recording session
-    print(" ")
     time.sleep(2)
+    print(" ")
     print("The recording will begin in:")
     for i in range(0, 3):
         print(3 - i, "seconds")
         time.sleep(1)
+    print(" ")
 
 def user_pref_input():
     # Makes a list containing the users preferences
@@ -102,59 +104,81 @@ def user_pref_input():
         try:
             userpref.append(float(input("Please enter the overall time of sample recording: ")))
             userpref.append(int(input('What is the number of sensors? ')))
+            userpref.append(float(input("What is the maximal voltage? ")))
             #userpref.append(float(input("Please enter the time between sample recording: ")))
             con = True
         except:
             print("Invalid input")
     return userpref
 
-def simple_graph_maker(data,current_sensor):
+def simple_graph_maker(data, userpref):
     # Makes a simple X-Y graph for a given data set
-    sample = []
-    voltage = []
-    for j in range(0,len(data)):
-        if type(data[j][1])==int and 0<=data[j][1]<=1023:
-            sample.append(j)
-            voltage.append(data[j][1]*5/1023)
-    print(len(data) - len(voltage), "Data packets were lost from " + current_sensor)
-    print(" ")
-    plt.plot(sample, voltage)
+    plt.style.use('fivethirtyeight')
+    for i in range(0, len(data)):
+        current_sensor = 'Sensor' + str(i + 1)
+        current_data = data[current_sensor]
+        sample = []
+        voltage = []
+        for j in range(0,len(current_data)):
+            if type(current_data[j][1])==float and 0<=current_data[j][1]<=1023:
+                sample.append(j)
+                voltage.append(current_data[j][1])
+        print(len(current_data) - len(voltage), "Data packets were lost from " + current_sensor+"\n")
+        plt.plot(sample, voltage, label=current_sensor)
     plt.xlabel("Sample [#]")
     plt.ylabel("Voltage [V]")
-    plt.title(current_sensor +" - Voltage as a function of Time")
+    plt.title("Voltage as a function of Time \n["+str(int(userpref[0]))+" seconds of recording]")
+    plt.legend()
     plt.show()
 
-def histogram_maker(data, current_sensor, resolution):
+def histogram_maker(data):
     # Makes a histogram graph for a given data set
-    voltage = []
-    for i in range(0,len(data)):
-        if type(data[i][1])==int and 0<=data[i][1]<=1023:
-            voltage.append(data[i][1]*5/1023)
-    bins = []
-    i=0
-    for i in range(1,resolution+1):
-       bins.append(i)
+    plt.style.use('fivethirtyeight')
+    con = False
+    while not con:
+        try:
+            resolution = int(input("To how many bins would you like your histogram to be divided to? "))
+            print(" ")
+            if resolution!= 0:
+                con = True
+        except:
+            print("Invalid input, please insert a natural number larger than 0")
+    a = 0.9/len(data)
+    for i in range(0, len(data)):
+        current_sensor = 'Sensor' + str(i + 1)
+        data_set = data[current_sensor]
+        voltage = []
+        for j in range(0,len(data_set)):
+            if type(data_set[j][1]) == float and 0 <= data_set[j][1] <= 1023:
+                voltage.append(data_set[j][1])
+        b = a*(1-i/len(data))
+        bins = []
+        k=0
+        for j in range(0,resolution+1):
+            bins.append(k)
+            k = k+float(5 / resolution)
+        plt.hist(voltage, bins=bins, edgecolor='black', label=current_sensor, histtype='bar', rwidth=a)
     bin_header = []
-    add = (5/resolution)
+    add = (5 / resolution)
     adder = float(add)
-    for i in range(0,resolution):
-        first = str(i*adder)
+    for j in range(0, resolution):
+        first = str(j * adder)
         to_first = first[0:3]
-        second = str((i+1)*adder)
+        second = str((j + 1) * adder)
         to_second = second[0:3]
-        current_bin = str(i+1) + " - " + to_first + '-' + to_second
+        current_bin = to_first + '-' + to_second
         bin_header.append(current_bin)
-    plt.hist(voltage, bins, histtype='bar', rwidth=0.8)
-    plt.title(current_sensor + " - Voltage histogram")
     plt.xlabel(bin_header)
+    plt.ylabel("# of samples per bin")
+    plt.title("Voltage histogram")
+    plt.legend()
     plt.show()
 
 def save_file(data):
     # Saves a file for given data
     t = str(time.asctime())
     file_name = str(re.sub('[:!@#$]', '_', t))+'.pkl'
-    print("The file name is: "+file_name)
-    print(" ")
+    print("The file name is: "+file_name+"\n")
     with open(file_name, "wb") as f:
         pickle.dump(data, f)
         del data
@@ -178,7 +202,7 @@ def user_options(datadict):
     while not con:
         try:
             what_to_do = str(input("Would you like to do? Enter 's' to save a file, 'o' to open a saved file or 'x' to exit: "))
-            print("")
+            print(" ")
             con = True
         except:
             print("Invalid input")
@@ -189,41 +213,18 @@ def user_options(datadict):
     if what_to_do == 'x':
         return 0
 
-def simple_graph_maker_dict(datadict):
-    # Makes a simple X-Y graph for each data set in a dictionary
-    for i in range(0, len(datadict)):
-        current_sensor = 'Sensor' + str(i + 1)
-        data = datadict[current_sensor]
-        simple_graph_maker(data, current_sensor)
-
-def histogram_maker_dict(datadict):
-    # Makes a histogram graph for each data set in a dictionary
-    con = False
-    while not con:
-        try:
-            resolution = int(input("To how many bins would you like your histogram to be divided to? "))
-            print(" ")
-            if resolution!= 0:
-                con = True
-        except:
-            print("Invalid input, please insert a natural number larger than 0")
-    for i in range(0, len(datadict)):
-        current_sensor = 'Sensor' + str(i + 1)
-        data = datadict[current_sensor]
-        histogram_maker(data, current_sensor, resolution)
-
-def graph_chooser(data):
+def graph_chooser(data, userpref):
     what_to_do = 'o'
     while what_to_do != 'x':
         con = False
         while not con:
             try:
                 what_to_do = str(input("Enter 'xy' to create X-Y Graphs, 'h' to create histograms or 'x' to proceed: "))
-                print("")
+                print(" ")
                 con = True
             except:
                 print("Invalid input")
         if what_to_do == 'xy':
-            simple_graph_maker_dict(data)
+            simple_graph_maker(data, userpref)
         if what_to_do == 'h':
-            histogram_maker_dict(data)
+            histogram_maker(data)
