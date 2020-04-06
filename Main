@@ -1,37 +1,97 @@
-##################################################################################
-#(0)   Import relevant classes & functions                                       #
-##################################################################################
+import time
 from various_functions import *
-import serial as ser, time
-##################################################################################
-#(1)   Input user preferences                                                    #
-##################################################################################
-userpref = user_pref_input()
-##################################################################################
-#(2)   Open chanel to the DAQ & create a dictionary to obtain the data later on  #
-##################################################################################
-ard1 = ser.Serial('COM8', 9600)
-datadic = recording_dictionary_maker(userpref[1])
-##################################################################################
-#(3)   Countdown - a few seconds to prepare for recording                        #
-##################################################################################
-countdown()
-start = time.time()
-##################################################################################
-#(4)   Read the data                                                             #
-##################################################################################
-rawData = data_aq(ard1, userpref, start, datadic)
-##################################################################################
-#(5)   Clean the data                                                            #
-##################################################################################
-data = clean_data(rawData, datadic,userpref[2])
-##################################################################################
-#(6)   Visualize the data                                                        #
-##################################################################################
-graph_chooser(data, userpref)
-##################################################################################
-#(7)   Save the data                                                             #
-##################################################################################
-file = 1
-while file!=0:
-    file = user_options(data)
+import pickle
+import re
+
+# This segment takes care of recording the data and saving it in a comfortable format
+the_recorder('n')
+
+poses = ['Index finger', 'Fist', 'Open palm', 'Peace', 'Thumb up']
+
+# This segment sends the data to the ML module for training and prediction making
+q = str(input("Would you like to open the ML module? press 'y' if so: "))
+if q == 'y':
+    q = str(input("Would you like to visualise the data for the ML module? press 'y' if so: "))
+    if q == 'y':
+        userpref = [1, 6, 5, 'COM6']
+        ml_data = ml_data_for_plot(userpref)
+        ml_scatter_plot_maker(ml_data, poses, userpref)
+
+    file_names_for_NN = ['NN file Index finger - all the data',
+                             'NN file Fist - all the data',
+                             'NN file Open palm - all the data',
+                             'NN file Peace - all the data',
+                             'NN file Thumb up - all the data']
+    for_ml = data_setup_for_ml(file_names_for_NN)
+    file_saver(for_ml, 'clf.pkl')
+    X = for_ml[0]
+    y = for_ml[1]
+    ml_data = ml_module(X, y)
+    clf_list = ml_data[0]
+    names = ml_data[1]
+    classifiers = ml_data[2]
+    scaler = ml_data[3]
+    print("----------\n")
+    question = str(input("Would you like to predict a gesture now? press 'y' if so: "))
+    if question == 'y':
+        q = input("Enter 'y' to use a preset or any other key to write the settings: ")
+        if q == 'y':
+            userpref = [1, 6, 5, 'COM6']
+            pose = ['Index finger', 'Fist', 'Open palm', 'Peace', 'Thumb up']
+            print(' 0 = Index finger \n 1 = Fist \n 2 = Open palm \n 3 = Peace \n 4 = Thumb up')
+            image = Image.open('Poses.jpg')
+            #image.show()
+            userpref.append(1)
+            i = int(input("please select the recorded pose: "))
+            userpref.append(pose[i])
+            userpref.append("Nadav")
+        else:
+            userpref = user_pref_input()
+        ard1 = ser.Serial(userpref[3], 57600)
+        pose = userpref[5]
+        data_for_NN = [names, classifiers, scaler, pose]
+        countdown()
+        live_data = NN_data_maker(ard1, userpref, data_for_NN)
+
+        t = str(time.asctime())
+        file_name = str(pose) + " live data " + str(re.sub('[:!@#$]', '_', t)) + '.pkl'
+        file_nam = str(pose) + " live data " + str(re.sub('[:!@#$]', '_', t))
+        file_saver(live_data, file_name)
+        simple_graph_saver_for_live_data(file_nam)
+
+        print(" ")
+        print("\n Would you like to predict another gesture now? press 'y' if so: ")
+        question = str(input())
+        while question == 'y':
+            flag_raiser()
+            userpref = [1, 6, 5, 'COM6']
+            pose = ['Index finger', 'Fist', 'Open palm', 'Peace', 'Thumb up']
+            print(' 0 = Index finger \n 1 = Fist \n 2 = Open palm \n 3 = Peace \n 4 = Thumb up')
+            userpref.append(1)
+            i = int(input("please select the recorded pose: "))
+            userpref.append(pose[i])
+            userpref.append("Nadav")
+            data_for_NN = [names, classifiers, scaler, pose]
+            countdown()
+            live_data = NN_data_maker(ard1, userpref, data_for_NN)
+            t = str(time.asctime())
+            file_name = str(pose[i]) + " live data " + str(re.sub('[:!@#$]', '_', t)) + '.pkl'
+            file_nam = str(pose[i]) + " live data " + str(re.sub('[:!@#$]', '_', t))
+            file_saver(live_data, file_name)
+            simple_graph_saver_for_live_data(file_nam)
+
+            question = str(input("Would you like to predict another gesture now? press 'y' if so: "))
+
+
+# This segment resets the database for the ml module
+q = str(input("\nWould you like to reset the database? press 'y' if so: "))
+if q == 'y':
+    q = str(input("\nAre you sure? press 'y' if so: "))
+    if q == 'y':
+        file_names_for_NN = ['NN file Index finger - all the data',
+                             'NN file Fist - all the data',
+                             'NN file Open palm - all the data',
+                             'NN file Peace - all the data',
+                             'NN file Thumb up - all the data']
+        for file_name in file_names_for_NN:
+            file_reset(file_name)
