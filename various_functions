@@ -1,18 +1,40 @@
+import pickle
+import re
+import time
 import serial as ser
-import re, time, pickle
 import matplotlib.pyplot as plt
+from PIL import Image
+import numpy as np
+from sklearn.gaussian_process import GaussianProcessClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
+from sklearn.svm import SVC
+from sklearn.neural_network import MLPClassifier
+from sklearn.gaussian_process.kernels import RBF
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+import threading
+import os
+import random
+import statistics
+import concurrent.futures
+
+flag = 1
+
 
 def recording_dictionary_maker(sensonrnum):
     # Acquire the number of sensors and sets a dictionary, each key is a sensor.
     # The data is a nested list [(t1:v1),(t2:v2),...]
     keys = []
-    for i in range(0,sensonrnum):
-        name = 'Sensor' + str(i+1)
+    for i in range(0, sensonrnum):
+        name = 'Sensor' + str(i + 1)
         keys.append(name)
     measdict = dict.fromkeys(keys, [])
-    return(measdict)
+    return (measdict)
 
-def data_aq(ard1, userpref, start, datadic):
+
+def data_aq(ard1, userpref, start):
     # Reads the raw data from a serial port and inserts it
     # to a nested list
     recordedData = []
@@ -28,16 +50,17 @@ def data_aq(ard1, userpref, start, datadic):
     print("The recording operation took", int(time.time() - start), "second(s)\n")
     return recordedData
 
+
 def clean_data(rawData, datadic, voltage):
     # Takes the raw data and organises it into a
     # pre-made dictionary
-    to_clean=[]
+    to_clean = []
     # This loop takes the raw data from the user and turns
     # it from 'byte' type into string ot int.
     # After, it will insert a tuple which contains the
     # time which the sample was taken in, the measured data
     # and a sample number.
-    for i in range(0,len(rawData)):
+    for i in range(0, len(rawData)):
         current_time = rawData[i][0]
         current_data = str(rawData[i][1])
         if current_data.find('aaaa') != (-1):
@@ -47,7 +70,7 @@ def clean_data(rawData, datadic, voltage):
                 current_data = float(re.search(r'\d+', current_data).group())
             except:
                 current_data = current_data
-        data_cell = [current_time,current_data,i]
+        data_cell = [current_time, current_data, i]
         to_clean.append(data_cell)
     # This loop constructs a temporary nested list.
     # The cleaned data will be chopped into it.
@@ -62,39 +85,42 @@ def clean_data(rawData, datadic, voltage):
             to_clean.pop(0)
         if to_clean[0][1] == 'aaaa':
             con = True
-        k = k+1
+        k = k + 1
     print(str(k), "Data packet(s) were lost due to data alignment issues\n")
     # This loop chops the cleaned data into the cells of
     # the temporary nested list.
-    while len(to_clean)>0:
+    while len(to_clean) > 0:
         if to_clean[0][1] == 'aaaa':
             to_clean.pop(0)
-        for i in range(0,len(datadic)):
+        for i in range(0, len(datadic)):
             if len(to_clean) > 0:
                 temp[i].append(to_clean.pop(0))
     # This loop inserts the cleaned data sets into a pre-made
     # dictionary.
-    for i in range(0,len(temp)):
-        for j in range(0,len(temp[i])):
+    for i in range(0, len(temp)):
+        for j in range(0, len(temp[i])):
             try:
-                temp[i][j][1] = temp[i][j][1]*voltage/1023
+                temp[i][j][1] = temp[i][j][1] * voltage / 1023
             except:
                 temp[i][j][1] = temp[i][j][1]
     for i in range(0, len(datadic)):
         current_sensor = 'Sensor' + str(i + 1)
         datadic[current_sensor] = temp[i]
+    print(datadic)
     return datadic
+
 
 def countdown():
     # Gives the user a few seconds to prepare for a
     # data recording session
-    time.sleep(2)
+    time.sleep(0.5)
     print(" ")
     print("The recording will begin in:")
     for i in range(0, 3):
         print(3 - i, "seconds")
-        time.sleep(1)
+        time.sleep(0.5)
     print(" ")
+
 
 def user_pref_input():
     # Makes a list containing the users preferences
@@ -105,11 +131,20 @@ def user_pref_input():
             userpref.append(float(input("Please enter the overall time of sample recording: ")))
             userpref.append(int(input('What is the number of sensors? ')))
             userpref.append(float(input("What is the maximal voltage? ")))
-            #userpref.append(float(input("Please enter the time between sample recording: ")))
+            userpref.append(str(input("What is the port you are using? ")))
+            userpref.append(int(input('How many recordings would you like to preform? ')))
+            pose = ['Index finger', 'Fist', 'Open palm', 'Peace', 'Thumb up']
+            print(' 0 = Index finger \n 1 = Fist \n 2 = Open palm \n 3 = Peace \n 4 = Thumb up')
+            image = Image.open('Poses.jpg')
+            image.show()
+            i = int(input("please select the recorded pose: "))
+            userpref.append(pose[i])
+            userpref.append(str(input("Enter your name: ")))
             con = True
         except:
             print("Invalid input")
     return userpref
+
 
 def simple_graph_maker(data, userpref):
     # Makes a simple X-Y graph for a given data set
@@ -119,19 +154,20 @@ def simple_graph_maker(data, userpref):
         current_data = data[current_sensor]
         sample = []
         voltage = []
-        for j in range(0,len(current_data)):
-            if type(current_data[j][1])==float and 0<=current_data[j][1]<=1023:
+        for j in range(0, len(current_data)):
+            if type(current_data[j][1]) == float and 0 <= current_data[j][1] <= 1023:
                 sample.append(j)
-                voltage.append(current_data[j][1])
-        print(len(current_data) - len(voltage), "Data packets were lost from " + current_sensor+"\n")
+                voltage.append(current_data[j][1] * userpref[2])
+        # print(len(current_data) - len(voltage), "Data packets were lost from " + current_sensor + "\n")
         plt.plot(sample, voltage, label=current_sensor)
     plt.xlabel("Sample [#]")
     plt.ylabel("Voltage [V]")
-    plt.title("Voltage as a function of Time \n["+str(int(userpref[0]))+" seconds of recording]")
+    plt.title("Voltage as a function of Time \n[" + str(int(userpref[0])) + " seconds of recording]")
     plt.legend()
     plt.show()
 
-def histogram_maker(data):
+
+def histogram_maker(data, userpref):
     # Makes a histogram graph for a given data set
     plt.style.use('fivethirtyeight')
     con = False
@@ -139,27 +175,26 @@ def histogram_maker(data):
         try:
             resolution = int(input("To how many bins would you like your histogram to be divided to? "))
             print(" ")
-            if resolution!= 0:
+            if resolution != 0:
                 con = True
         except:
             print("Invalid input, please insert a natural number larger than 0")
-    a = 0.9/len(data)
+    a = 0.9 / len(data)
     for i in range(0, len(data)):
         current_sensor = 'Sensor' + str(i + 1)
         data_set = data[current_sensor]
         voltage = []
-        for j in range(0,len(data_set)):
+        for j in range(0, len(data_set)):
             if type(data_set[j][1]) == float and 0 <= data_set[j][1] <= 1023:
                 voltage.append(data_set[j][1])
-        b = a*(1-i/len(data))
         bins = []
-        k=0
-        for j in range(0,resolution+1):
+        k = 0
+        for j in range(0, resolution + 1):
             bins.append(k)
-            k = k+float(5 / resolution)
+            k = k + float(userpref / resolution)
         plt.hist(voltage, bins=bins, edgecolor='black', label=current_sensor, histtype='bar', rwidth=a)
     bin_header = []
-    add = (5 / resolution)
+    add = (userpref / resolution)
     adder = float(add)
     for j in range(0, resolution):
         first = str(j * adder)
@@ -174,14 +209,20 @@ def histogram_maker(data):
     plt.legend()
     plt.show()
 
-def save_file(data):
+
+def save_file(data, userpref, num):
     # Saves a file for given data
     t = str(time.asctime())
-    file_name = str(re.sub('[:!@#$]', '_', t))+'.pkl'
-    print("The file name is: "+file_name+"\n")
+    file_name = userpref[5] + " " + str(num) + " " + str(userpref[0]) + " Seconds of recording " + " " + userpref[
+        6] + " " + str(
+        re.sub('[:!@#$]', '_', t)) + '.pkl'
+    print("\n" "The file name is: " + file_name + "\n")
+    file = [data, userpref]
     with open(file_name, "wb") as f:
-        pickle.dump(data, f)
-        del data
+        pickle.dump(file, f)
+        del data, userpref
+    return file_name
+
 
 def open_file():
     # Open saved files
@@ -192,26 +233,31 @@ def open_file():
             con = True
         except:
             print("Invalid input")
-    file_name = file_name
+    file_name = file_name + '.pkl'
     my_file = pickle.load(file=open(file_name, "rb"))
     return my_file
 
-def user_options(datadict):
+
+def delete_file(file_name):
+    os.remove(file_name)
+
+
+def user_options(data, userpref):
     # Asks the user what would he like to do
     con = False
     while not con:
         try:
-            what_to_do = str(input("Would you like to do? Enter 's' to save a file, 'o' to open a saved file or 'x' to exit: "))
+            what_to_do = str(input("Would you like to do? Enter 's' to save a file or 'x' to exit: "))
             print(" ")
             con = True
         except:
             print("Invalid input")
-    if what_to_do=='s':
-        return (save_file(datadict))
-    if what_to_do == 'o':
-        print(open_file())
+    if what_to_do == 's':
+        save_file(data, userpref)
     if what_to_do == 'x':
+        print("Bye bye")
         return 0
+
 
 def graph_chooser(data, userpref):
     what_to_do = 'o'
@@ -227,4 +273,644 @@ def graph_chooser(data, userpref):
         if what_to_do == 'xy':
             simple_graph_maker(data, userpref)
         if what_to_do == 'h':
-            histogram_maker(data)
+            histogram_maker(data, userpref[2])
+
+
+def live_data_aq(ard1, userpref, j, live_data):
+    norm_bul = False
+    recordedData = [j]
+    # This loop reads the raw data, the data type is 'byte'
+    # The loops turns it into a float
+    # The loop returns a nested list, every list inside the nested list
+    # contains the sample number and the data
+    while len(recordedData) < userpref[1] + 1:
+        while True:
+            if ard1.inWaiting() > 0:
+                current_data = str(ard1.readline())
+                break
+        while current_data.find('aaaa') == (-1) and (ard1.inWaiting() > 0):
+            current_data = str(ard1.readline())
+        i = 0
+        while len(recordedData) < userpref[1] + 1:
+            if ard1.inWaiting() > 0:
+                current_data = str(ard1.readline())
+
+                try:
+                    current_data = float(re.search(r'\d+', current_data).group())
+                    current_sample = current_data / 1023
+                    if current_sample > 1:
+                        current_sample = live_data[i]
+
+                except:
+                    current_sample = live_data[i]
+                recordedData.append(current_sample)
+            i = i + 1
+            if i > userpref[1]:
+                i = 0
+    if norm_bul:
+        recordedData = vector_normalizer(recordedData)
+        print(recordedData)
+        return recordedData
+    else:
+        print(recordedData)
+        return recordedData
+
+
+def live_data_maker(ard1, userpref, start, datadic):
+    cell = [0, 0]
+    first_set = []
+    j = 0
+    for i in range(userpref[1]):
+        first_set.append(cell)
+    live_data = live_data_aq(ard1, userpref, 0, first_set)
+    data = []
+    while time.time() - start <= userpref[0]:
+        live_data = live_data_aq(ard1, userpref, j, live_data)
+        j = j + 1
+        data.append(live_data)
+    data_temp = []
+    for i in range(1, len(data[0])):
+        to_append = []
+        for j in range(0, len(data)):
+            temp = []
+            now = time.asctime()
+            temp.append(now[11:19])
+            temp.append(data[j][i])
+            temp.append(data[j][0])
+            to_append.append(temp)
+        data_temp.append(to_append)
+    for i in range(0, userpref[1]):
+        current_sensor = 'Sensor' + str(i + 1)
+        datadic[current_sensor] = data_temp[i]
+    return_object = [datadic, data]
+    return return_object
+
+
+def what_to_do():
+    # Asks the user what would he like to do first
+    con = False
+    while not con:
+        try:
+            what_to_do = str(input("Would you like to record a new recording or to open an existing data file?\n"
+                                   "Enter 'r' to record, 'o' to open a saved file or 'x' to proceed: "))
+            print(" ")
+            con = True
+        except:
+            print("Invalid input")
+    if what_to_do == 'r':
+        print("Lets go...\n")
+        return 'r'
+    if what_to_do == 'o':
+        return open_file()
+    if what_to_do == 'x':
+        return 0
+
+
+def simple_graph_saver(data, userpref, num):
+    # Saves a simple X-Y graph for a given data set
+    plt.style.use('fivethirtyeight')
+    for i in range(0, len(data)):
+        current_sensor = 'Sensor' + str(i + 1)
+        current_data = data[current_sensor]
+        sample = []
+        voltage = []
+        for j in range(0, len(current_data)):
+            if type(current_data[j][1]) == float and 0 <= current_data[j][1] <= 1023:
+                sample.append(j)
+                voltage.append(current_data[j][1] * userpref[2])
+        # print(len(current_data) - len(voltage), "Data packets were lost from " + current_sensor + "\n")
+        plt.plot(sample, voltage, label=current_sensor)
+    plt.xlabel("Sample [#]")
+    plt.ylabel("Voltage [V]")
+    plt.title("Voltage as a function of Time \n[" + str(int(userpref[0])) + " seconds of recording]")
+    plt.legend()
+    t = str(time.asctime())
+    file_name = userpref[5] + " " + str(num) + " " + str(userpref[0]) + " Seconds of recording " + " " + userpref[
+        6] + " " + str(
+        re.sub('[:!@#$]', '_', t)) + '.JPEG'
+    plt.savefig(file_name, bbox_inches="tight", pad_inches=1, quality=100, optimize=True)
+    plt.close()
+
+
+def file_opener(file_name):
+    file_name = file_name + '.pkl'
+    my_file = pickle.load(file=open(file_name, "rb"))
+    return my_file
+
+
+def shuffle_in_unison(a, b):
+    assert len(a) == len(b)
+    shuffled_a = np.empty(a.shape, dtype=a.dtype)
+    shuffled_b = np.empty(b.shape, dtype=b.dtype)
+    permutation = np.random.permutation(len(a))
+    for old_index, new_index in enumerate(permutation):
+        shuffled_a[new_index] = a[old_index]
+        shuffled_b[new_index] = b[old_index]
+    return shuffled_a, shuffled_b
+
+
+def ml_module(X, y):
+    global scaler
+    X = np.array(X)
+    y = np.array(y)
+
+    # Plot data
+    for x, C in zip(X, y):
+        if C == 0:
+            plt.plot(x[0], x[1], '.r')
+        elif C == 1:
+            plt.plot(x[0], x[1], '.g')
+        elif C == 2:
+            plt.plot(x[0], x[1], '.b')
+        elif C == 3:
+            plt.plot(x[0], x[1], '.m')
+        elif C == 4:
+            plt.plot(x[0], x[1], '.k')
+    #plt.show()
+
+    ##########################################
+
+    # Two option to normalize data
+    noRm = 1
+    if noRm:
+        # Normalize with mean and std
+        scaler = StandardScaler()
+        scaler.fit(X)
+        X = scaler.transform(X)  # X = X*x_std + x_mean # Denormalize or use scaler.inverse_transform(X)
+        x_mean = scaler.mean_
+        x_std = scaler.scale_
+    else:
+        # Normalize with min and max
+        x_max = np.max(X, 0)
+        x_min = np.min(X, 0)
+        X = (X - x_min) / (x_max - x_min)
+    ##########################################
+
+    inputs, labels = shuffle_in_unison(X, y)
+    X_train, X_test, y_train, y_test = train_test_split(inputs, labels, test_size=0.15, random_state=42)
+
+    names = ['Nearest Neighbors', 'Linear SVM', 'RBF SVM',  # 'Gaussian Process',
+             'Decision Tree', 'Random Forest', 'Neural Net', 'AdaBoost']
+
+    classifiers = [
+        KNeighborsClassifier(3),
+        SVC(kernel="linear", C=0.025, probability=True),
+        SVC(gamma=2, C=1, probability=True),
+        # GaussianProcessClassifier(1.0 * RBF(1.0)),
+        DecisionTreeClassifier(max_depth=5),
+        RandomForestClassifier(max_depth=5, n_estimators=10, max_features=1),
+        MLPClassifier(alpha=1, max_iter=1000),
+        AdaBoostClassifier()
+    ]
+
+    # iterate over classifiers
+    scores = []
+    clf_list = []
+    for name, clf in zip(names, classifiers):
+        clf.fit(list(X_train), list(y_train))
+
+        score = clf.score(X_test, y_test)  # Evaluate on test data
+        scores.append(score)
+        print(name, score)
+        clf_list.append(clf)
+    scores = dict(zip(names, scores))
+    return [clf_list, names, classifiers, scaler]
+
+
+def data_setup_for_ml(file_names_list):
+    X = []
+    y = []
+    for i in range(len(file_names_list)):
+        data = file_opener(file_names_list[i])
+        for j in range(len(data)):
+            X.append(data[j])
+            y.append(i)
+    return [X, y]
+
+
+def file_saver(data, file_name):
+    with open(file_name, "wb") as f:
+        pickle.dump(data, f)
+        del data
+
+
+def file_name_finder(pose_number):
+    if pose_number == 'Index finger':
+        return str("NN file Index finger - all the data")
+    if pose_number == 'Fist':
+        return str("NN file Fist - all the data")
+    if pose_number == 'Open palm':
+        return str("NN file Open palm - all the data")
+    if pose_number == 'Peace':
+        return str("NN file Peace - all the data")
+    if pose_number == 'Thumb up':
+        return str("NN file Thumb up - all the data")
+
+
+def prediction(live_Xs, names, classifiers, scaler, pose):
+    noRm = 1
+    X = np.array(live_Xs)
+    resaults = []
+    for name, clf in zip(names, classifiers):
+       # print("-------------------------")
+       # print('Classifier ' + name + ': ')
+        for i in range(1):
+            y_real = pose
+            x = X
+            if noRm:
+                x = scaler.transform(x.reshape(1, -1))
+            else:
+                x = (x - x_min) / (x_max - x_min)
+
+            y_predict = clf.predict(x.reshape(1, -1))[0]
+            dist = clf.predict_proba(x.reshape(1, -1))[0]
+            if y_predict == 0:
+                prediction = 'Index finger'
+            if y_predict == 1:
+                prediction = 'Fist'
+            if y_predict == 2:
+                prediction = 'Open palm'
+            if y_predict == 3:
+                prediction = 'Peace'
+            if y_predict == 4:
+                prediction = 'Thumb up'
+
+        # print('Real class: ' + str(y_real) + '\nPredicted class: \n' + str(prediction) + '\n' +
+        #     ', distribution: \n' + str(dist))
+        if prediction == pose:
+            resaults.append(1)
+        else:
+            resaults.append(0)
+    return resaults
+
+
+def the_recorder(is_it_live):
+    norm_bul = False
+    con = False
+    while not con:
+        if is_it_live == 'y':
+            file = 'r'
+        if is_it_live == 'n':
+            file = what_to_do()
+        if file == 0:
+            con = True
+        if type(file) == list:
+            data = file[0]
+            userpref = file[1]
+            con = True
+        if file == 'r':
+            q = input("Enter 'y' to use a preset or any other key to write the settings: ")
+            if q == 'y':
+                userpref = [1, 6, 5, 'COM6']
+                pose = ['Index finger', 'Fist', 'Open palm', 'Peace', 'Thumb up']
+                if is_it_live == 'y':
+                    userpref.append(1)
+                if is_it_live == 'n':
+                    userpref.append(int(input('How many recordings would you like to preform? ')))
+                image = Image.open('Poses.jpg')
+                print(' 0 = Index finger \n 1 = Fist \n 2 = Open palm \n 3 = Peace \n 4 = Thumb up')
+                image.show()
+                i = int(input("please select the recorded pose: "))
+                userpref.append(pose[i])
+                userpref.append("Nadav")
+            else:
+                userpref = user_pref_input()
+            ard1 = ser.Serial(userpref[3], 57600)
+
+            NN_file = []
+            file_list = []
+            for i in range(0, userpref[4]):
+                datadic = recording_dictionary_maker(userpref[1])
+                countdown()
+                start = time.time()
+                back = live_data_maker(ard1, userpref, start, datadic)
+                data = back[0]
+                raw_to_NN = back[1]
+                simple_graph_saver(data, userpref, i)
+                file_name = save_file(data, userpref, i)
+                file_list.append(file_name)
+                #############################################################
+                # The following segment takes the raw data and averages it
+                # for the ml module
+                to_NN = []
+                count = 99
+                last_count = 0 + count
+                gap = int((len(raw_to_NN) - count) / 9)
+                while len(to_NN) < 10:
+                    if count > len(raw_to_NN) and len(to_NN) < 10:
+                        count = random.randint(100, 150)
+                        while last_count == count:
+                            count = random.randint(100, 150)
+                        last_count = 0 + count
+                    if 300 < count < 350:
+                        count += 10
+                    else:
+                        if norm_bul:
+                            to_NN.append(input_avg(raw_to_NN[count:count + gap - 1]))
+                            count += gap
+                        else:
+                            to_NN.append(raw_to_NN[count])
+                            count += gap
+                NN_file.append(to_NN)
+                ##############################################################
+            if is_it_live == 'n':
+                t = str(time.asctime())
+                list_name = "File name list " + userpref[5] + " " + str(userpref[0]) + " Seconds of recording " + " " + \
+                            userpref[6] \
+                            + " " + str(re.sub('[:!@#$]', '_', t)) + '.pkl'
+                with open(list_name, "wb") as f:
+                    pickle.dump(file_list, f)
+                    del file_list
+
+                nn_name = "NN file " + userpref[5] + " " + str(userpref[0]) + " Seconds of recording " + " " + \
+                          userpref[6] \
+                          + " " + str(re.sub('[:!@#$]', '_', t)) + '.pkl'
+                print(nn_name + "\n")
+
+            NN = []
+            for i in range(len(NN_file)):
+                for j in range(len(NN_file[i])):
+                    NN.append(NN_file[i][j][1:])
+            if is_it_live == 'n':
+                q = str(input("Is the data good to use for ML purposes? press 'y' if so: "))
+                if q == 'y':
+                    print(" ")
+                    file_n = str(file_name_finder(userpref[5]))
+                    old_data = file_opener(file_n)
+                    print('The ML data file contained ' + str(len(old_data)) + ' samples.\n')
+                    file_namer = file_n + '.pkl'
+                    delete_file(file_namer)
+                    old_data = old_data + NN
+                    print('The updated ML data file contains ' + str(len(old_data)) + ' samples.\n')
+
+                    file_saver(old_data, file_namer)
+
+                with open(nn_name, "wb") as f:
+                    pickle.dump(NN, f)
+
+            con = True
+    try:
+        return [NN, userpref]
+    except:
+        return 0
+
+
+def get_input():
+    global flag
+    keystrk = input('\n')
+    # thread doesn't continue until key is pressed
+    flag = False
+
+
+def flag_raiser():
+    global flag
+    # thread doesn't continue until key is pressed
+    flag = True
+
+
+def NN_data_maker(ard1, userpref, data_for_NN):
+    cell = [0, 0]
+    first_set = []
+    for i in range(userpref[1]):
+        first_set.append(cell)
+    live_data = live_data_aq(ard1, userpref, 0, first_set)
+    names = data_for_NN[0]
+    classifiers = data_for_NN[1]
+    scaler = data_for_NN[2]
+    pose = data_for_NN[3]
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        future = executor.submit(NN_data_loop, ard1, userpref, live_data, names, classifiers, scaler, pose)
+        flag = executor.submit(get_input)
+        return_value = future.result()
+    return return_value
+
+
+def NN_data_loop(ard1, userpref, live_data, names, classifiers, scaler, pose):
+    global flag
+    j = 0
+    success_counter = []
+    success_dict = {}
+    success_dict_prec = {}
+    for name in names:
+        success_dict[name] = 0
+        success_dict_prec[name] = 0
+    for i in range(len(names)):
+        success_counter.append(0)
+    counter = 0
+    all_data = []
+    while flag == 1:
+        live_data = live_data_aq(ard1, userpref, j, live_data)
+        data = live_data[1:]
+        j = j + 1
+        success_counter = [x + y for x, y in zip(success_counter, prediction(data, names, classifiers, scaler, pose))]
+        counter += 1
+        data = [pose] + data
+        all_data.append(data)
+        if not flag:
+            i = 0
+            for key in success_dict:
+                temp = str((1 - (counter - success_counter[i]) / counter) * 100)
+                prec = temp[:5] + '%'
+                success_dict[key] = success_counter[i]
+                success_dict_prec[key] = prec
+                i += 1
+            print('Out of ' + str(counter) + ' intervals, the number of successful predictions for each classifier \n'
+                                             'are as shown: ')
+            print(success_dict)
+            print('\n And in percentages: ')
+            print(success_dict_prec)
+            return all_data
+
+
+def ml_data_gatherer():
+    file_names_for_NN = ['NN file Index finger - all the data',
+                         'NN file Fist - all the data',
+                         'NN file Open palm - all the data',
+                         'NN file Peace - all the data',
+                         'NN file Thumb up - all the data']
+    file_data = []
+    for file_name in file_names_for_NN:
+        file_data = file_data + file_opener(file_name)
+    delete_file('All the NN data.pkl')
+    file_saver(file_data, 'All the NN data.pkl')
+    return file_data
+
+
+def ml_data_for_plot(userpref):
+    file_names_for_NN = ['NN file Index finger - all the data',
+                         'NN file Fist - all the data',
+                         'NN file Open palm - all the data',
+                         'NN file Peace - all the data',
+                         'NN file Thumb up - all the data']
+    dict = recording_dictionary_maker(userpref[1])
+    all_the_data = []
+    for file_name in file_names_for_NN:
+        pose = file_opener(file_name)
+        all_the_data.append(pose)
+
+    to_return = []
+    for k in range(userpref[1]):
+        sensor = []
+        for i in range(len(file_names_for_NN)):
+            pose = []
+            for j in range(len(all_the_data[i])):
+                pose.append(all_the_data[i][j][k])
+            sensor.append(pose)
+        to_return.append(sensor)
+
+    p = 0
+    for key in dict:
+        dict[key] = to_return[p]
+        p += 1
+
+    return dict
+
+
+def ml_scatter_plot_maker(dict, poses, userpref):
+    for key in dict:
+        for i in range(len(dict[key])):
+            ys = [x * userpref[2] for x in dict[key][i]]
+            xs = list(range(len(ys)))
+            plt.scatter(xs, ys, label=poses[i])
+        plt.xlabel("Sample [#]")
+        plt.ylabel("Voltage [V]")
+        plt.title("Voltage at different gestures \n[" + str(key) + "]")
+        plt.legend()
+        t = str(time.asctime())
+        file_name = str(re.sub('[:!@#$]', '_', t)) + ' ' + str(key) + '.JPEG'
+        plt.savefig(file_name, bbox_inches="tight", pad_inches=1, quality=100, optimize=True, dpi=1000)
+        #plt.show()
+        plt.close()
+
+
+def vector_normalizer(vector):
+    mini = min(vector)
+    for i in range(len(vector)):
+        vector[i] = vector[i] - mini
+    return vector
+
+
+def file_reset(file_name):
+    # Turns a file into an empty list
+    print("The old file is as shown: \n" + str(file_opener(file_name)))
+    delete_file(str(file_name)+".pkl")
+    data = []
+    file_saver(data, str(file_name)+".pkl")
+    print("The file now is as shown: \n" + str(file_opener(file_name)))
+    print("\n")
+
+
+def by_gesture_to_by_sensor(by_gesture):
+    by_sensor = []
+    for i in range(len(by_gesture[0])):
+        sensor = []
+        for j in range(len(by_gesture)):
+            sensor.append(by_gesture[j][i])
+        by_sensor.append(sensor)
+    return by_sensor
+
+
+def list_statistics(a_list):
+    mean = statistics.mean(a_list)
+    std = statistics.stdev(a_list)
+    return [mean, std]
+
+
+def normalizer(a_list):
+    stats = list_statistics(a_list)
+    norm = stats[0]
+    for i in range(len(a_list)):
+        delta = abs(a_list[i]-norm)
+        if a_list[i] > norm:
+            a_list[i] = a_list[i] - delta
+        if a_list[i] < norm:
+            a_list[i] = a_list[i] + delta
+    return a_list
+
+
+def nested_to_dict(a_list, dict):
+    # Takes a nested list, divided by gesture/measurement/sensor
+    # a_list = [[pose1 - [1,2,3,4,5,6],[1,2,3,4,5,6],...],[pose2 - [1,2,3,4,5,6],[1,2,3,4,5,6],...],...]
+    # Returns a dictionary divided by sensor/measurement/gesture
+    nested = []
+    for k in range(len(a_list[0][0])):
+        sensor = []
+        for i in range(len(a_list)):
+            pose = []
+            for j in range(len(a_list[i])):
+                pose.append(a_list[i][j][k])
+            sensor.append(pose)
+        nested.append(sensor)
+
+    p = 0
+    for key in dict:
+        dict[key] = to_return[p]
+        p += 1
+
+    return dict
+
+
+def graph_for_a_pose(pose_num):
+    # This function show a graph for a gives pose, returns mean and STD for every sensor
+    file_names_for_NN = ['NN file Index finger - all the data',
+                         'NN file Fist - all the data',
+                         'NN file Open palm - all the data',
+                         'NN file Peace - all the data',
+                         'NN file Thumb up - all the data']
+
+    pose = ['Index finger', 'Fist', 'Open palm', 'Peace', 'Thumb up']
+    plt.style.use('fivethirtyeight')
+    data = by_gesture_to_by_sensor(file_opener(file_names_for_NN[pose_num]))
+
+    for i in range(0, len(data)):
+        plt.plot(range(0, len(data[i])), data[i], label=('Sensor' + str(i + 1)))
+        data_stats = list_statistics(data[i])
+        print("The mean of " + ('Sensor' + str(i + 1)) + " is: " + str(data_stats[0]))
+        print("The STD of " + ('Sensor' + str(i + 1)) + " is: " + str(data_stats[1]))
+
+    plt.xlabel("Sample [#]")
+    plt.ylabel("Voltage [V]")
+    plt.title("Voltage as a function of Time \n[" + str(pose[pose_num]) + "]")
+    plt.legend()
+    plt.show()
+    t = str(time.asctime())
+    file_name = str(re.sub('[:!@#$]', '_', t)) + ' ' + str(pose[pose_num]) + '.JPEG'
+    plt.savefig(file_name, bbox_inches="tight", pad_inches=1, quality=100, optimize=True, dpi=1000)
+
+
+def input_avg(nested_list):
+    # This function takes a nested list of measurements, each measurement contains
+    # samples from all the sensors used, the function returns a vector at the size
+    # of a cell in the nested list.
+    avgs = []
+    for i in range(len(nested_list[0])):
+        to_avg = []
+        for j in range(len(nested_list)):
+            to_avg.append(nested_list[j][i])
+        avgs.append(sum(to_avg)/len(to_avg))
+    return avgs
+
+
+def simple_graph_saver_for_live_data(file_name):
+    live_data = file_opener(file_name)
+    b = []
+    for cell in live_data:
+        b.append(cell[1:])
+
+    plt.style.use('fivethirtyeight')
+    for i in range(0, len(b[0])):
+        current_sensor = 'Sensor' + str(i + 1)
+        sample = []
+        voltage = []
+        for j in range(0, len(b)):
+            sample.append(j)
+            voltage.append(b[j][i] * 5)
+        plt.plot(sample, voltage, label=current_sensor)
+    plt.xlabel("Sample [#]")
+    plt.ylabel("Voltage [V]")
+    plt.title("Voltage as a function of Time \n" + "[Live recording]")
+    plt.legend()
+    file_nam = file_name + " - Graph " + '.JPEG'
+    plt.savefig(file_nam, bbox_inches="tight", pad_inches=1, quality=100, optimize=True)
+    plt.close()
+
