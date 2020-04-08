@@ -150,7 +150,7 @@ def file_update(file_name, data):
 def simple_graph_saver(data, user_pref, suffix_num):
     # Saves a simple X-Y graph for a given data set
     pose = ['Index finger ', 'Fist ', 'Open palm ', 'Peace ', 'Thumb up ']
-    suffix = [' - Graph', ' - LIVE Graph', ' - ML Graph']
+    suffix = [' - Graph', ' - LIVE Graph', ' - Training data Graph']
     plt.style.use('fivethirtyeight')
     for i in range(0, user_pref[1]):
         current_sensor = 'Sensor' + str(i + 1)
