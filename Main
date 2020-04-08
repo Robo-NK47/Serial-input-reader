@@ -3,95 +3,121 @@ from various_functions import *
 import pickle
 import re
 
-# This segment takes care of recording the data and saving it in a comfortable format
-the_recorder('n')
-
-poses = ['Index finger', 'Fist', 'Open palm', 'Peace', 'Thumb up']
-
-# This segment sends the data to the ML module for training and prediction making
-q = str(input("Would you like to open the ML module? press 'y' if so: "))
-if q == 'y':
-    q = str(input("Would you like to visualise the data for the ML module? press 'y' if so: "))
-    if q == 'y':
-        userpref = [1, 6, 5, 'COM6']
-        ml_data = ml_data_for_plot(userpref)
-        ml_scatter_plot_maker(ml_data, poses, userpref)
-
-    file_names_for_NN = ['NN file Index finger - all the data',
-                             'NN file Fist - all the data',
-                             'NN file Open palm - all the data',
-                             'NN file Peace - all the data',
-                             'NN file Thumb up - all the data']
-    for_ml = data_setup_for_ml(file_names_for_NN)
-    file_saver(for_ml, 'clf.pkl')
-    X = for_ml[0]
-    y = for_ml[1]
-    ml_data = ml_module(X, y)
-    clf_list = ml_data[0]
-    names = ml_data[1]
-    classifiers = ml_data[2]
-    scaler = ml_data[3]
-    print("----------\n")
-    question = str(input("Would you like to predict a gesture now? press 'y' if so: "))
-    if question == 'y':
-        q = input("Enter 'y' to use a preset or any other key to write the settings: ")
-        if q == 'y':
-            userpref = [1, 6, 5, 'COM6']
-            pose = ['Index finger', 'Fist', 'Open palm', 'Peace', 'Thumb up']
-            print(' 0 = Index finger \n 1 = Fist \n 2 = Open palm \n 3 = Peace \n 4 = Thumb up')
-            image = Image.open('Poses.jpg')
-            #image.show()
-            userpref.append(1)
-            i = int(input("please select the recorded pose: "))
-            userpref.append(pose[i])
-            userpref.append("Nadav")
-        else:
-            userpref = user_pref_input()
-        ard1 = ser.Serial(userpref[3], 57600)
-        pose = userpref[5]
-        data_for_NN = [names, classifiers, scaler, pose]
-        countdown()
-        live_data = NN_data_maker(ard1, userpref, data_for_NN)
-
-        t = str(time.asctime())
-        file_name = str(pose) + " live data " + str(re.sub('[:!@#$]', '_', t)) + '.pkl'
-        file_nam = str(pose) + " live data " + str(re.sub('[:!@#$]', '_', t))
-        file_saver(live_data, file_name)
-        simple_graph_saver_for_live_data(file_nam)
-
-        print(" ")
-        print("\n Would you like to predict another gesture now? press 'y' if so: ")
-        question = str(input())
-        while question == 'y':
-            flag_raiser()
-            userpref = [1, 6, 5, 'COM6']
-            pose = ['Index finger', 'Fist', 'Open palm', 'Peace', 'Thumb up']
-            print(' 0 = Index finger \n 1 = Fist \n 2 = Open palm \n 3 = Peace \n 4 = Thumb up')
-            userpref.append(1)
-            i = int(input("please select the recorded pose: "))
-            userpref.append(pose[i])
-            userpref.append("Nadav")
-            data_for_NN = [names, classifiers, scaler, pose]
+#################################################################################################
+pose = ['Index finger', 'Fist', 'Open palm', 'Peace', 'Thumb up']
+# print(' 0 = Index finger \n 1 = Fist \n 2 = Open palm \n 3 = Peace \n 4 = Thumb up')
+# userpref = [sample_num, sensor_num, Arduino_path, max_voltage, number_of_sets, pose, name]
+user_pref = [2000, 6, ser.Serial('COM6', 57600), 5, 1, 0, 'Nadav']
+file_names_for_ml = ['All the training data - Index finger.pkl',
+                     'All the training data - Fist.pkl',
+                     'All the training data - Open palm.pkl',
+                     'All the training data - Peace.pkl',
+                     'All the training data - Thumb up.pkl']
+#################################################################################################
+question = str(input("\n1. To record new training data - Enter 'record'\n"
+                     "2. To predict a gesture - Enter 'predict'\n"
+                     "3. To reset the data - Enter 'reset'\n"
+                     "4. To train the ml classifiers - Enter 'train'\n"
+                     "5. To inspect the data - Enter 'inspect data'\n"
+                     "6. To exit the process - Enter 'exit'"
+                     "\nPlease enter your selection: "))
+while True:
+    #############################################################################################
+    if question == 'record':
+        print('\n 0 = Index finger \n 1 = Fist \n 2 = Open palm \n 3 = Peace \n 4 = Thumb up')
+        user_pref[5] = int(input("please select the recorded pose: "))
+        all_samples_per_session = []
+        for i in range(user_pref[4]):
+            print("\nRecording #" + str(i + 1) + " is about to begin...")
             countdown()
-            live_data = NN_data_maker(ard1, userpref, data_for_NN)
-            t = str(time.asctime())
-            file_name = str(pose[i]) + " live data " + str(re.sub('[:!@#$]', '_', t)) + '.pkl'
-            file_nam = str(pose[i]) + " live data " + str(re.sub('[:!@#$]', '_', t))
-            file_saver(live_data, file_name)
-            simple_graph_saver_for_live_data(file_nam)
+            all_samples_per_session = all_samples_per_session + training_dataset_maker(user_pref)
+        q = str(input("Would you like to save the data? press 'y' if so: "))
+        if q == 'y':
+            simple_graph_saver(nested_list_flipper(all_samples_per_session), user_pref, 0)
+            file_saver(user_pref, 0, all_samples_per_session, 0)
+        q = str(input("Is the data good to use for ML purposes? press 'y' if so: "))
+        if q == 'y':
+            file_name = "All the training data - " + str(pose[user_pref[5]]) + ".pkl"
+            print("\nThe training data file contained " + str(len(file_opener(file_name))) + " samples.\n")
+            print("\nThe updated training data file contains " +
+                  str(len(file_opener(file_name)) + len(all_samples_per_session)) + " samples.\n")
+            file_update(file_name, all_samples_per_session)
+    #############################################################################################
+    if question == 'reset':
+        q = str(input("Are you sure? press 'y' if so: "))
+        if q == 'y':
+            for gesture in pose:
+                file_name = "All the training data - " + gesture + ".pkl"
+                print("\nThe " + gesture + " training data file contained " + str(len(file_opener(file_name))) +
+                      " samples.")
+                file_reset(file_name, [])
+                print("The updated training data file contains " + str(len(file_opener(file_name))) + " samples.")
+    #############################################################################################
+    if question == 'train':
+        print("\nThis may take a while...\n")
+        start_time = time.time()
+        # ml_data = [clf_list, names, classifiers, scaler, scores]
+        ml_data = ml_module(data_setup_for_ml_module(file_names_for_ml))
+        print("\nThe training process took: " + "\n--- %s Minute(s) ---" % ((time.time() - start_time)/60) + "\n")
+        q = str(input("\nAre the results good for saving? press 'y' if so: "))
+        if q == 'y':
+            file_delete('clf.pkl')
+            with open('clf.pkl', "wb") as f:
+                pickle.dump(ml_data, f)
+                del ml_data
+    #############################################################################################
+    if question == 'predict':
+        ml_stored_data = file_opener('clf.pkl')
+        # ml_data = [clf_list, names, classifiers, scaler, scores]
+        user_pref[0] = 100
+        user_pref[4] = 1
+        print('\n 0 = Index finger \n 1 = Fist \n 2 = Open palm \n 3 = Peace \n 4 = Thumb up')
+        user_pref[5] = int(input("\nplease select the recorded pose: "))
+        countdown()
+        predictions = []
+        recorded_data = []
+        dataset = [0, 0, 0, 0, 0, 0]
+        for i in range(user_pref[0]):
+            dataset = data_recorder(user_pref, dataset)
+            recorded_data.append(dataset)
+            predictions.append(prediction(dataset, ml_stored_data[1],
+                                          ml_stored_data[2], ml_stored_data[3], user_pref[5]))
+        counter = [[], [], [], [], [], [], []]
+        for i in range(len(predictions)):
+            for j in range(len(predictions[i])):
+                counter[j].append(predictions[i][j])
+        for i in range(len(counter)):
+            counter[i] = pose[most_common_in_a_list(counter[i])]
 
-            question = str(input("Would you like to predict another gesture now? press 'y' if so: "))
-
-
-# This segment resets the database for the ml module
-q = str(input("\nWould you like to reset the database? press 'y' if so: "))
-if q == 'y':
-    q = str(input("\nAre you sure? press 'y' if so: "))
-    if q == 'y':
-        file_names_for_NN = ['NN file Index finger - all the data',
-                             'NN file Fist - all the data',
-                             'NN file Open palm - all the data',
-                             'NN file Peace - all the data',
-                             'NN file Thumb up - all the data']
-        for file_name in file_names_for_NN:
-            file_reset(file_name)
+        print("\n The predicted pose is: " + str(counter))
+        simple_graph_saver(nested_list_flipper(recorded_data), user_pref, 1)
+    #############################################################################################
+    if question == 'inspect data':
+        all_the_data = []
+        for file_name in file_names_for_ml:
+            all_the_data.append(file_opener(file_name))
+        statistics = []
+        for i in range(len(all_the_data)):
+            user_pref[5] = i
+            simple_graph_saver(nested_list_flipper(all_the_data[i]), user_pref, 2)
+            statistics.append(pose[i])
+            gesture = nested_list_flipper(all_the_data[i])
+            cell = []
+            for j in range(len(gesture)):
+                cell.append('sensor' + str(j+1))
+                cell.append(list_statistics(gesture[j]))
+            statistics.append(cell)
+        for i in range(len(statistics)):
+            print("\n" + str(statistics[i]))
+    #############################################################################################
+    if question == 'exit':
+        print('\n Bye bye!')
+        break
+    #############################################################################################
+    question = str(input("\n1. To record new training data - Enter 'record'\n"
+                         "2. To predict a gesture - Enter 'predict'\n"
+                         "3. To reset the data - Enter 'reset'\n"
+                         "4. To train the ml classifiers - Enter 'train'\n"
+                         "5. To inspect the data - Enter 'inspect data'\n"
+                         "6. To exit the process - Enter 'exit'"
+                         "\nPlease enter your selection: "))
